@@ -187,6 +187,8 @@ static void populate_ikgt_plugin_handlers(xmon_event_handlers_t *plugin_handlers
 	plugin_handlers->mtf_vmexit_event_handler = ikgt_report_event_mtf_vmexit;
 
 	plugin_handlers->msr_write_event_handler = ikgt_report_event_msr_write;
+
+        plugin_handlers->initial_vmexit_check_event_handler = &ikgt_report_event_initial_vmexit_check;
 }
 
 void plugin_init(void)

@@ -24,6 +24,9 @@
 
 #define MTF_COUNT_LIMIT 6
 
+#define VMEXIT_REASON_MTF 37
+
+
 typedef struct {
 	/* Used in Nested MTF */
 	uint32_t	mtf_count;                      /* Maintains the count of violations */
@@ -470,4 +473,77 @@ boolean_t is_dummy_view_in_use(const guest_vcpu_t *vcpu_id)
 	mtf_guest_cpu = mtf_guest->gcpu_state[vcpu_id->guest_cpu_id];
 
 	return mtf_guest_cpu->dummy_ept_in_use;
+}
+
+
+static
+boolean_t ept_mtf_vmexit(const guest_vcpu_t *vcpu_id, uint64_t current_cpu_rip)
+{
+	mtf_guest_cpu_state_t *mtf_guest_cpu;
+	mtf_guest_state_t *mtf_guest = NULL;
+	ikgt_guest_state_t *ikgt_guest = NULL;
+	uint32_t i;
+
+	mtf_guest = mtf_find_guest_state(vcpu_id->guest_id);
+	MON_ASSERT(mtf_guest);
+	mtf_guest_cpu = mtf_guest->gcpu_state[vcpu_id->guest_cpu_id];
+
+	MON_ASSERT(mtf_guest_cpu->mtf_count);
+
+	ikgt_guest = find_guest_state(vcpu_id->guest_id);
+	MON_ASSERT(ikgt_guest);
+
+	if (ikgt_guest->view_assigned[mtf_guest_cpu->mtf_view_handle]) {
+		MON_ASSERT(set_active_view(vcpu_id, mtf_guest_cpu->mtf_view_handle, TRUE, FALSE));
+	} else {
+		MON_ASSERT(set_active_view(vcpu_id, DEFAULT_VIEW_HANDLE, TRUE, FALSE));
+	}
+
+	mtf_guest_cpu->dummy_ept_in_use = 0;
+
+	for (i = 0; i < (uint32_t)mtf_guest_cpu->mtf_count; i++) {
+		if (mtf_guest_cpu->mtf_mode[i] != IKGT_MTF_TYPE_DATA_ALLOW) {
+			/* This means MTF was enabled for something other than EPT violation as well */
+			return FALSE;
+		}
+	}
+
+	/* Disable MTF */
+	mtf_guest_cpu->mtf_count = 0;
+	mtf_hw_disable(vcpu_id);
+
+
+	return TRUE;
+}
+
+boolean_t ikgt_report_event_initial_vmexit_check(const guest_vcpu_t *vcpu_id,
+						 uint64_t		current_cpu_rip,
+						 uint32_t		vmexit_reason)
+{
+	mtf_guest_cpu_state_t *mtf_guest_cpu;
+	mtf_guest_state_t *mtf_guest = NULL;
+
+	mtf_guest = mtf_find_guest_state(vcpu_id->guest_id);
+	if (!mtf_guest) {
+		return FALSE;
+	}
+	mtf_guest_cpu = mtf_guest->gcpu_state[vcpu_id->guest_cpu_id];
+
+	if (mtf_guest_cpu->dummy_ept_in_use == 1) {
+		if (vmexit_reason == VMEXIT_REASON_MTF) {
+			/* Check if MTF VMExit occurred on the faulting RIP (RIP for which MTF was enabled) */
+			/* Example: REP-prefixed string instruction */
+			if (current_cpu_rip == mtf_guest_cpu->fault_rip) {
+				return TRUE;
+			} else { /* MTF VMExit occurred NOT on the faulting RIP */
+				if (ept_mtf_vmexit(vcpu_id, current_cpu_rip)) {
+					mtf_guest_cpu->fault_rip = 0;   /* Reset the state */
+					mtf_guest_cpu->next_rip = 0;    /* Reset the state */
+					return TRUE;
+				}
+			}
+		}
+	}
+
+	return FALSE;
 }
