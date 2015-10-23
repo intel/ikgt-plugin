@@ -91,4 +91,8 @@ CALLBACK boolean_t ikgt_report_event_ept_violation(const guest_vcpu_t *vcpu_id,
 										  uint64_t guest_physical_address);
 
 
+
+boolean_t ikgt_report_event_initial_vmexit_check(const guest_vcpu_t *vcpu_id,
+						 uint64_t		current_cpu_rip,
+						 uint32_t		vmexit_reason);
 #endif /* _PLUGIN_EVENT_HANDLERS_H_ */
